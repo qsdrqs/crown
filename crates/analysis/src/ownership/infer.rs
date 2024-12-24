@@ -434,9 +434,12 @@ where
         InferCtxt::project_deeper(base, base_ty, place.projection, infer_cx)
     }
 
-    fn copy_for_deref(infer_cx: &mut Self::Ctxt, consume: Option<Consume<Self::LocalSig>>) {
-        assert!(infer_cx.deref_copy.is_none());
-        infer_cx.deref_copy = consume
+    fn copy_for_deref(infer_cx: &mut Self::Ctxt, consume: Option<Consume<Self::LocalSig>>) -> Result<(), String> {
+        if !infer_cx.deref_copy.is_none() {
+            return Err("deref_copy is already set".to_string())
+        }
+        infer_cx.deref_copy = consume;
+        Ok(())
     }
 
     fn transfer<const ENSURE_MOVE: bool>(
@@ -444,7 +447,7 @@ where
         ty: Ty<'tcx>,
         lhs_result: Consume<Self::LocalSig>,
         rhs_result: Consume<Self::LocalSig>,
-    ) {
+    ) -> Result<(), String> {
         tracing::debug!("transfer relation: {:?} ~ {:?}", lhs_result, rhs_result);
 
         matcher(
@@ -479,7 +482,7 @@ where
         if ty.is_unsafe_ptr() || ty.is_box() || ty.is_region_ptr() {
             let lhs = lhs.repack(|sigs| sigs.start..sigs.start + 1u32);
             let rhs = rhs.repack(|sigs| sigs.start..sigs.start + 1u32);
-            Self::transfer::<ENSURE_MOVE>(infer_cx, ty, lhs, rhs)
+            Self::transfer::<ENSURE_MOVE>(infer_cx, ty, lhs, rhs).unwrap()
         } else {
             todo!("handling casts between structs are not supported")
         }
@@ -634,7 +637,7 @@ fn fit<'tcx, T, U, DB>(
     measurable: impl Measurable<'tcx>,
     database: &mut DB,
     mut on_matched: impl FnMut(T, U, &mut DB),
-) {
+) -> Result<(), String> {
     let fitter_ptr_chased = measurable.max_ptr_chased() - fitter_precision;
 
     let fitter_leaf_nodes = measurable.leaf_nodes(adt_def, fitter_ptr_chased as u32);
@@ -654,9 +657,13 @@ fn fit<'tcx, T, U, DB>(
             let _ = fittee.next().unwrap();
         }
     }
+    if fitter.next().is_some() || fittee.next().is_some() {
+        return Err("fitter and fittee are not none".to_string());
+    }
 
     assert!(fitter.next().is_none());
     assert!(fittee.next().is_none());
+    Ok(())
 }
 
 fn matcher<'tcx, T, U, DB>(
@@ -666,7 +673,7 @@ fn matcher<'tcx, T, U, DB>(
     measurable: impl Measurable<'tcx>,
     database: &mut DB,
     mut on_matched: impl FnMut(T, U, &mut DB),
-) {
+) -> Result<(), String> {
     let lhs_measure = lhs_result.size_hint().1.unwrap() as u32;
     let rhs_measure = rhs_result.size_hint().1.unwrap() as u32;
 
@@ -684,6 +691,7 @@ fn matcher<'tcx, T, U, DB>(
         for (lhs, rhs) in lhs_result.zip(rhs_result) {
             on_matched(lhs, rhs, database);
         }
+        Ok(())
     } else {
         for (lhs, rhs) in lhs_result
             .by_ref()

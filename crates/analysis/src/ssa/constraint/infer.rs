@@ -40,14 +40,14 @@ pub trait InferMode<'infercx, 'db, 'tcx> {
         consume: Option<Consume<SSAIdx>>,
     ) -> Option<Consume<Self::LocalSig>>;
 
-    fn copy_for_deref(infer_cx: &mut Self::Ctxt, consume: Option<Consume<Self::LocalSig>>);
+    fn copy_for_deref(infer_cx: &mut Self::Ctxt, consume: Option<Consume<Self::LocalSig>>) -> Result<(), String>;
 
     fn transfer<const ENSURE_MOVE: bool>(
         infer_cx: &mut Self::Ctxt,
         ty: Ty<'tcx>,
         lhs_result: Consume<Self::LocalSig>,
         rhs_result: Consume<Self::LocalSig>,
-    );
+    ) -> Result<(), String>;
 
     fn cast<const ENSURE_MOVE: bool>(
         infer_cx: &mut Self::Ctxt,
@@ -129,7 +129,7 @@ impl<'infercx, 'db, 'tcx: 'infercx> InferMode<'infercx, 'db, 'tcx> for Pure {
         None
     }
 
-    fn copy_for_deref((): &mut Self::Ctxt, _: Option<Consume<Self::LocalSig>>) {}
+    fn copy_for_deref((): &mut Self::Ctxt, _: Option<Consume<Self::LocalSig>>) -> Result<(), String> { Ok(()) }
 
     #[inline]
     fn transfer<const ENSURE_MOVE: bool>(
@@ -137,7 +137,8 @@ impl<'infercx, 'db, 'tcx: 'infercx> InferMode<'infercx, 'db, 'tcx> for Pure {
         _: Ty,
         Consume { r#use: (), def: () }: Consume<Self::LocalSig>,
         Consume { r#use: (), def: () }: Consume<Self::LocalSig>,
-    ) {
+    ) -> Result<(), String> {
+        Ok(())
     }
 
     #[inline]
@@ -316,7 +317,11 @@ impl<'rn, 'tcx: 'rn> Renamer<'rn, 'tcx> {
                 block: bb,
                 statement_index: index,
             };
-            self.go_statement::<Infer>(infer_cx.borrow_mut(), statement, location);
+            let res = self.go_statement::<Infer>(infer_cx.borrow_mut(), statement, location);
+            if let Err(err) = res {
+                tracing::error!("error at {:?}: {:?}", location, err);
+                continue;
+            }
             index += 1;
         }
 
@@ -342,20 +347,23 @@ impl<'rn, 'tcx: 'rn> Renamer<'rn, 'tcx> {
         infer_cx: &mut Infer::Ctxt,
         statement: &Statement<'tcx>,
         location: Location,
-    ) where
+    ) -> Result<(), String> where
         Infer: InferMode<'rn, 'db, 'tcx>,
     {
         match &statement.kind {
             StatementKind::Assign(box (place, rvalue)) => {
-                self.go_assign::<Infer>(infer_cx, place, rvalue, location)
+                self.go_assign::<Infer>(infer_cx, place, rvalue, location)?;
+                Ok(())
             }
             StatementKind::SetDiscriminant { box place, .. } => {
                 let _ = consume_place_at::<Infer>(place, self.body, location, self, infer_cx);
-                tracing::debug!("ignoring SetDiscriminant statement {:?}", statement)
+                tracing::debug!("ignoring SetDiscriminant statement {:?}", statement);
+                Ok(())
             }
             StatementKind::Deinit(box place) => {
                 let _ = consume_place_at::<Infer>(place, self.body, location, self, infer_cx);
-                tracing::debug!("ignoring Deinit statement {:?}", statement)
+                tracing::debug!("ignoring Deinit statement {:?}", statement);
+                Ok(())
             }
             StatementKind::Intrinsic(box intrinsic) => {
                 // assert!(matches!(intrinsic, NonDivergingIntrinsic::Assume(..)))
@@ -365,6 +373,7 @@ impl<'rn, 'tcx: 'rn> Renamer<'rn, 'tcx> {
                     consume_place_at::<Infer>(&place, self.body, location, self, infer_cx)
                         .is_none()
                 );
+                Ok(())
             }
             StatementKind::AscribeUserType(_, _)
             | StatementKind::StorageLive(_)
@@ -373,7 +382,7 @@ impl<'rn, 'tcx: 'rn> Renamer<'rn, 'tcx> {
             | StatementKind::FakeRead(_)
             | StatementKind::Coverage(_)
             | StatementKind::Nop => {
-                unreachable!("statement {:?} is not assumed to appear", statement)
+                Err(format!("statement {:?} is not assumed to appear", statement))
             }
         }
     }
@@ -435,7 +444,7 @@ impl<'rn, 'tcx: 'rn> Renamer<'rn, 'tcx> {
         place: &Place<'tcx>,
         rvalue: &Rvalue<'tcx>,
         location: Location,
-    ) where
+    ) -> Result<(), String> where
         Infer: InferMode<'rn, 'db, 'tcx>,
     {
         tracing::debug!("processing assignment {:?} = {:?}", place, rvalue);
@@ -514,9 +523,9 @@ impl<'rn, 'tcx: 'rn> Renamer<'rn, 'tcx> {
                     (Some(lhs_consume), None) => Infer::unknown_source(infer_cx, lhs_consume),
                     (Some(lhs_consume), Some(rhs_consume)) => {
                         if operand.is_move() {
-                            Infer::transfer::<true>(infer_cx, stmt_ty, lhs_consume, rhs_consume)
+                            Infer::transfer::<true>(infer_cx, stmt_ty, lhs_consume, rhs_consume)?
                         } else {
-                            Infer::transfer::<false>(infer_cx, stmt_ty, lhs_consume, rhs_consume)
+                            Infer::transfer::<false>(infer_cx, stmt_ty, lhs_consume, rhs_consume)?
                         }
                     }
                 }
@@ -565,7 +574,7 @@ impl<'rn, 'tcx: 'rn> Renamer<'rn, 'tcx> {
                 // assert!(lhs_consume.is_none(), "{:?}", lhs_consume.unwrap());
                 let rhs_consume =
                     consume_place_at::<Infer>(rhs, self.body, location, self, infer_cx);
-                Infer::copy_for_deref(infer_cx, rhs_consume);
+                Infer::copy_for_deref(infer_cx, rhs_consume)?;
                 tracing::debug!("deref_copy is ignored")
             }
 
@@ -668,8 +677,9 @@ impl<'rn, 'tcx: 'rn> Renamer<'rn, 'tcx> {
             | Rvalue::Len(_)
             | Rvalue::ShallowInitBox(_, _)
             | Rvalue::ThreadLocalRef(_) => {
-                todo!();
+                return Err("not implemented".to_string());
             }
         }
+        Ok(())
     }
 }

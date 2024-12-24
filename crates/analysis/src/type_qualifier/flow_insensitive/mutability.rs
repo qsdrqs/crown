@@ -139,23 +139,31 @@ impl<'tcx, M: MutabilityLikeAnalysis> Infer<'tcx> for M {
         locals: &[Var],
         struct_fields: &StructFields,
         database: &mut Self::DB,
-    ) {
+    ) -> Result<(), String> {
         let lhs = place;
         let rhs = rvalue;
 
         match rhs {
             Rvalue::Use(Operand::Copy(rhs) | Operand::Move(rhs)) | Rvalue::CopyForDeref(rhs) => {
-                let lhs = place_vars::<MutCtxt>(lhs, local_decls, locals, struct_fields, database);
+                let lhs = place_vars_result::<MutCtxt>(lhs, local_decls, locals, struct_fields, database)?;
                 let mut rhs_deref = None;
-                let rhs = place_vars::<UnknownCtxt>(
+                let rhs = place_vars_result::<UnknownCtxt>(
                     rhs,
                     local_decls,
                     locals,
                     struct_fields,
                     &mut rhs_deref,
-                );
+                )?;
 
                 // type safety
+                if lhs.end.index() - lhs.start.index() != rhs.end.index() - rhs.start.index() {
+                    return Err(format!(
+                        "{:?}: {} = {:?}",
+                        place,
+                        local_decls.local_decls()[place.local].ty,
+                        rvalue
+                    ));
+                }
                 assert_eq!(
                     lhs.end.index() - lhs.start.index(),
                     rhs.end.index() - rhs.start.index(),
@@ -179,15 +187,15 @@ impl<'tcx, M: MutabilityLikeAnalysis> Infer<'tcx> for M {
             }
             Rvalue::Cast(_, Operand::Copy(rhs) | Operand::Move(rhs), _) => {
                 // for cast, we process the head ptr only
-                let lhs = place_vars::<MutCtxt>(lhs, local_decls, locals, struct_fields, database);
+                let lhs = place_vars_result::<MutCtxt>(lhs, local_decls, locals, struct_fields, database)?;
                 let mut rhs_deref = None;
-                let rhs = place_vars::<UnknownCtxt>(
+                let rhs = place_vars_result::<UnknownCtxt>(
                     rhs,
                     local_decls,
                     locals,
                     struct_fields,
                     &mut rhs_deref,
-                );
+                )?;
 
                 let mut lhs_rhs = lhs.zip(rhs);
                 if let Some((lhs, rhs)) = lhs_rhs.next() {
@@ -209,15 +217,15 @@ impl<'tcx, M: MutabilityLikeAnalysis> Infer<'tcx> for M {
             // }
             Rvalue::Ref(_, _, rhs) | Rvalue::AddressOf(_, rhs) => {
                 let mut lhs =
-                    place_vars::<EnsureNoDeref>(lhs, local_decls, locals, struct_fields, &mut ());
+                    place_vars_result::<EnsureNoDeref>(lhs, local_decls, locals, struct_fields, &mut ())?;
                 let mut rhs_deref = None;
-                let rhs = place_vars::<UnknownCtxt>(
+                let rhs = place_vars_result::<UnknownCtxt>(
                     rhs,
                     local_decls,
                     locals,
                     struct_fields,
                     &mut rhs_deref,
-                );
+                )?;
                 let lhs_ref = lhs.next().unwrap();
                 if let Some(rhs_deref) = rhs_deref {
                     database.guard(lhs_ref, rhs_deref);
@@ -228,9 +236,11 @@ impl<'tcx, M: MutabilityLikeAnalysis> Infer<'tcx> for M {
                 }
             }
             _ => {
-                let _ = place_vars::<MutCtxt>(lhs, local_decls, locals, struct_fields, database);
+                let _ = place_vars_result::<MutCtxt>(lhs, local_decls, locals, struct_fields, database)?;
             }
         }
+
+        Ok(())
     }
 
     default fn infer_terminator(
@@ -261,7 +271,7 @@ impl<'tcx, M: MutabilityLikeAnalysis> Infer<'tcx> for M {
                             let callee_body = tcx.optimized_mir(callee);
                             let mut callee_vars = fn_locals
                                 .0
-                                .contents_iter(&callee)
+                                .contents_iter(&callee).unwrap()
                                 .take(callee_body.arg_count + 1);
 
                             let dest = place_vars::<MutCtxt>(
@@ -394,13 +404,13 @@ impl PlaceContext for EnsureNoDeref {
     }
 }
 
-fn place_vars<'tcx, Ctxt: PlaceContext>(
+fn place_vars_result<'tcx, Ctxt: PlaceContext>(
     place: &Place<'tcx>,
     local_decls: &impl HasLocalDecls<'tcx>,
     locals: &[Var],
     struct_fields: &StructFields,
     deref_store: &mut Ctxt::DerefStore,
-) -> Range<Var> {
+) -> Result<Range<Var>, String> {
     let mut place_vars = Range {
         start: locals[place.local.index()],
         end: locals[place.local.index() + 1],
@@ -421,10 +431,10 @@ fn place_vars<'tcx, Ctxt: PlaceContext>(
                     TyKind::Adt(adt_def, _) => {
                         // FIXME correctness?
                         if adt_def.is_union() {
-                            return place_vars;
+                            return Ok(place_vars);
                         }
                         let field_vars = struct_fields
-                            .fields(&adt_def.did())
+                            .fields(&adt_def.did())?
                             .nth(field.index())
                             .unwrap();
 
@@ -432,7 +442,7 @@ fn place_vars<'tcx, Ctxt: PlaceContext>(
 
                         base_ty = ty;
                     }
-                    TyKind::Tuple(..) => return place_vars,
+                    TyKind::Tuple(..) => return Ok(place_vars),
                     _ => unreachable!(),
                 }
             }
@@ -445,12 +455,22 @@ fn place_vars<'tcx, Ctxt: PlaceContext>(
             ProjectionElem::Downcast(..) => {
                 // happens when asserting nonnullness of fn ptrs
                 assert!(place_vars.is_empty());
-                return place_vars;
+                return Ok(place_vars);
             }
         }
     }
 
-    place_vars
+    Ok(place_vars)
+}
+
+fn place_vars<'tcx, Ctxt: PlaceContext>(
+    place: &Place<'tcx>,
+    local_decls: &impl HasLocalDecls<'tcx>,
+    locals: &[Var],
+    struct_fields: &StructFields,
+    deref_store: &mut Ctxt::DerefStore,
+) -> Range<Var> {
+    place_vars_result::<Ctxt>(place, local_decls, locals, struct_fields, deref_store).unwrap()
 }
 
 pub(crate) fn conservative_call<'tcx, M: MutabilityLikeAnalysis>(

@@ -13,17 +13,29 @@ pub struct Discretization<Idx> {
 
 impl<Idx: Copy> Discretization<Idx> {
     #[inline]
-    pub fn contents_iter(&self, did: &DefId) -> impl Iterator<Item = Range<Idx>> + '_ {
+    pub fn contents_iter(&self, did: &DefId) -> Result<impl Iterator<Item = Range<Idx>> + '_, String> {
+        if self.did_idx.get(did).is_none() {
+            return Err(format!("Discretization: DefId {did:?} not found"));
+        }
         let idx = self.did_idx[did];
-        self.contents[idx]
+        if idx >= self.contents.len() {
+            return Err(format!("Discretization: DefId {did:?} not found"));
+        }
+        Ok(self.contents[idx]
             .array_windows()
-            .map(|&[start, end]| start..end)
+            .map(|&[start, end]| start..end))
     }
 
     #[inline]
-    pub fn content(&self, did: &DefId, idx: usize) -> Range<Idx> {
+    pub fn content(&self, did: &DefId, idx: usize) -> Result<Range<Idx>, String> {
+        if self.did_idx.get(did).is_none() {
+            return Err(format!("Discretization: DefId {did:?} not found"));
+        }
+        if idx >= self.contents[self.did_idx[did]].len() {
+            return Err(format!("Discretization: DefId {did:?} does not have {idx}th entity"));
+        }
         let outer_idx = self.did_idx[did];
-        self.contents[outer_idx][idx]..self.contents[outer_idx][idx + 1]
+        Ok(self.contents[outer_idx][idx]..self.contents[outer_idx][idx + 1])
     }
 }
 
@@ -33,12 +45,12 @@ pub struct FnLocals<Idx>(pub Discretization<Idx>);
 impl<Idx: Copy> StructFields<Idx> {
     /// [`fields()`] returns a slice of [`Range<T>`] that is in lock-step with [`all_fields()`]
     #[inline]
-    pub fn fields(&self, did: &DefId) -> impl Iterator<Item = Range<Idx>> + '_ {
+    pub fn fields(&self, did: &DefId) -> Result<impl Iterator<Item = Range<Idx>> + '_, String> {
         self.0.contents_iter(did)
     }
 
     #[inline]
-    pub fn field(&self, did: &DefId, f: usize) -> Range<Idx> {
+    pub fn field(&self, did: &DefId, f: usize) -> Result<Range<Idx>, String> {
         self.0.content(did, f)
     }
 }
@@ -46,12 +58,12 @@ impl<Idx: Copy> StructFields<Idx> {
 impl<Idx: Copy> FnLocals<Idx> {
     /// [`locals()`] returns a slice of [`Range<Var>`] that is in lock-step with [`local_decls`]
     /// #[inline]
-    pub fn locals(&self, did: &DefId) -> impl Iterator<Item = Range<Idx>> + '_ {
+    pub fn locals(&self, did: &DefId) -> Result<impl Iterator<Item = Range<Idx>> + '_, String> {
         self.0.contents_iter(did)
     }
 
     #[inline]
-    pub fn local(&self, did: &DefId, local: usize) -> Range<Idx> {
+    pub fn local(&self, did: &DefId, local: usize) -> Result<Range<Idx>, String> {
         self.0.content(did, local)
     }
 }

@@ -66,12 +66,12 @@ impl<Qualifier> TypeQualifiers<Qualifier> {
 
     pub fn struct_results(&self, r#struct: &DefId) -> impl Iterator<Item = &[Qualifier]> {
         self.struct_fields
-            .fields(r#struct)
+            .fields(r#struct).unwrap()
             .map(|Range { start, end }| &self.model.raw[start.index()..end.index()])
     }
 
     pub fn struct_field_result(&self, r#struct: &DefId, f: usize) -> &[Qualifier] {
-        let Range { start, end } = self.struct_fields.field(r#struct, f);
+        let Range { start, end } = self.struct_fields.field(r#struct, f).unwrap();
         &self.model.raw[start.index()..end.index()]
     }
 
@@ -322,7 +322,7 @@ pub trait Infer<'tcx>: WithConstraintSystem {
         locals: &[Var],
         struct_fields: &StructFields,
         database: &mut Self::DB,
-    );
+    ) -> Result<(), String>;
 
     fn infer_terminator(
         &mut self,
@@ -382,7 +382,7 @@ pub trait Infer<'tcx>: WithConstraintSystem {
                 block: bb,
                 statement_index: index,
             };
-            self.infer_statement(
+            let res = self.infer_statement(
                 statement,
                 location,
                 local_decls,
@@ -390,6 +390,9 @@ pub trait Infer<'tcx>: WithConstraintSystem {
                 struct_fields,
                 database,
             );
+            if let Err(err) = res {
+                tracing::error!("error in statement {:?}: {}", statement, err);
+            }
             index += 1;
         }
 
@@ -420,7 +423,7 @@ pub trait Infer<'tcx>: WithConstraintSystem {
         locals: &[Var],
         struct_fields: &StructFields,
         database: &mut Self::DB,
-    ) {
+    ) -> Result<(), String> {
         tracing::debug!("infering statement {:?}", statement);
         match &statement.kind {
             StatementKind::Assign(box (place, rvalue)) => {
@@ -432,7 +435,7 @@ pub trait Infer<'tcx>: WithConstraintSystem {
                     locals,
                     struct_fields,
                     database,
-                );
+                )?;
             }
             StatementKind::SetDiscriminant { .. } => {
                 tracing::debug!("ignoring SetDiscriminant statement {:?}", statement)
@@ -453,5 +456,6 @@ pub trait Infer<'tcx>: WithConstraintSystem {
                 unreachable!("statement {:?} is not assumed to appear", statement)
             }
         }
+        Ok(())
     }
 }

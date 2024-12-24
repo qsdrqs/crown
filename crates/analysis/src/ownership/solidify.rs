@@ -170,7 +170,7 @@ impl<'tcx> WholeProgramResults<'tcx> {
                                         continue;
                                     }
                                     let Range { start, end } =
-                                        struct_fields.field(&adt_def.did(), f.index());
+                                        struct_fields.field(&adt_def.did(), f.index()).unwrap();
                                     ownership = &model.raw[start.index()..end.index()];
                                     index = 0;
                                     ty = field_ty;
@@ -182,6 +182,10 @@ impl<'tcx> WholeProgramResults<'tcx> {
                             }
                         }
 
+                        if index >= ownership.len() {
+                            tracing::error!("index out of bounds when solidifying ownership");
+                            continue;
+                        }
                         let ownership =
                             smallvec::SmallVec::<[_; 2]>::from_slice(&ownership[index..]);
 

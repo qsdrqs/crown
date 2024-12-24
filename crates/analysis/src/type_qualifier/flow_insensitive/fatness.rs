@@ -142,7 +142,7 @@ impl<'me, 'tcx> Infer<'tcx> for FatnessAnalysis<'me, 'tcx> {
         locals: &[Var],
         struct_fields: &StructFields,
         database: &mut Self::DB,
-    ) {
+    ) -> Result<(), String> {
         let lhs = place;
         let rhs = rvalue;
 
@@ -152,6 +152,14 @@ impl<'me, 'tcx> Infer<'tcx> for FatnessAnalysis<'me, 'tcx> {
                 let rhs = place_vars(rhs, local_decls, locals, struct_fields);
 
                 // type safety
+                if lhs.end.index() - lhs.start.index() != rhs.end.index() - rhs.start.index()
+                {
+                    return Err(format!(
+                        "lhs: {:?}, rhs: {:?}",
+                        lhs.end.index() - lhs.start.index(),
+                        rhs.end.index() - rhs.start.index()
+                    ));
+                }
                 assert_eq!(
                     lhs.end.index() - lhs.start.index(),
                     rhs.end.index() - rhs.start.index()
@@ -201,6 +209,7 @@ impl<'me, 'tcx> Infer<'tcx> for FatnessAnalysis<'me, 'tcx> {
                 // let _ = place_vars(lhs, local_decls, locals, struct_fields);
             }
         }
+        Ok(())
     }
 
     fn infer_terminator(
@@ -231,7 +240,7 @@ impl<'me, 'tcx> Infer<'tcx> for FatnessAnalysis<'me, 'tcx> {
                             let callee_body = tcx.optimized_mir(callee);
                             let mut callee_vars = fn_locals
                                 .0
-                                .contents_iter(&callee)
+                                .contents_iter(&callee).unwrap()
                                 .take(callee_body.arg_count + 1);
 
                             let dest = place_vars(destination, local_decls, locals, struct_fields);
@@ -332,7 +341,7 @@ fn place_vars<'tcx>(
                             return place_vars;
                         }
                         let field_vars = struct_fields
-                            .fields(&adt_def.did())
+                            .fields(&adt_def.did()).unwrap()
                             .nth(field.index())
                             .unwrap();
 
