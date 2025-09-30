@@ -16,9 +16,10 @@ extern crate rustc_session;
 extern crate rustc_target;
 
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    time::Instant, collections::HashMap,
+    time::Instant,
 };
 
 use analysis::{ownership::AnalysisKind, CrateCtxt};
@@ -447,9 +448,7 @@ fn run(cmd: Command, tcx: TyCtxt<'_>) -> Result<()> {
                 &mutability_result,
             );
         }
-        Command::Summarise {
-            results_path,
-        } => {
+        Command::Summarise { results_path } => {
             #[derive(serde::Serialize, Default)]
             struct TranslationSummary {
                 fn_data: HashMap<String, String>,
@@ -485,8 +484,7 @@ fn run(cmd: Command, tcx: TyCtxt<'_>) -> Result<()> {
             if let Some(results_path) = results_path {
                 fs::write(results_path.join("translation.json"), summary)?;
             }
-
-        },
+        }
     }
     Ok(())
 }

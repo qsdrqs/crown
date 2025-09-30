@@ -127,7 +127,8 @@ where
                         );
                         database.push_equal::<crate::ssa::constraint::Debug>((), dest.def, ret);
                     },
-                ).unwrap();
+                )
+                .unwrap();
             }
         }
 
@@ -167,7 +168,8 @@ where
                                         arg.def,
                                     );
                                 },
-                            ).unwrap();
+                            )
+                            .unwrap();
                         }
                         crate::ownership::Param::Normal(param) => {
                             let mut param = param;
@@ -209,7 +211,8 @@ where
                                         arg.r#use,
                                     );
                                 },
-                            ).unwrap();
+                            )
+                            .unwrap();
                         }
                     }
                 }

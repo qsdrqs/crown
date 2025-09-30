@@ -40,7 +40,10 @@ pub trait InferMode<'infercx, 'db, 'tcx> {
         consume: Option<Consume<SSAIdx>>,
     ) -> Option<Consume<Self::LocalSig>>;
 
-    fn copy_for_deref(infer_cx: &mut Self::Ctxt, consume: Option<Consume<Self::LocalSig>>) -> Result<(), String>;
+    fn copy_for_deref(
+        infer_cx: &mut Self::Ctxt,
+        consume: Option<Consume<Self::LocalSig>>,
+    ) -> Result<(), String>;
 
     fn transfer<const ENSURE_MOVE: bool>(
         infer_cx: &mut Self::Ctxt,
@@ -129,7 +132,12 @@ impl<'infercx, 'db, 'tcx: 'infercx> InferMode<'infercx, 'db, 'tcx> for Pure {
         None
     }
 
-    fn copy_for_deref((): &mut Self::Ctxt, _: Option<Consume<Self::LocalSig>>) -> Result<(), String> { Ok(()) }
+    fn copy_for_deref(
+        (): &mut Self::Ctxt,
+        _: Option<Consume<Self::LocalSig>>,
+    ) -> Result<(), String> {
+        Ok(())
+    }
 
     #[inline]
     fn transfer<const ENSURE_MOVE: bool>(
@@ -347,7 +355,8 @@ impl<'rn, 'tcx: 'rn> Renamer<'rn, 'tcx> {
         infer_cx: &mut Infer::Ctxt,
         statement: &Statement<'tcx>,
         location: Location,
-    ) -> Result<(), String> where
+    ) -> Result<(), String>
+    where
         Infer: InferMode<'rn, 'db, 'tcx>,
     {
         match &statement.kind {
@@ -381,9 +390,10 @@ impl<'rn, 'tcx: 'rn> Renamer<'rn, 'tcx> {
             | StatementKind::Retag(_, _)
             | StatementKind::FakeRead(_)
             | StatementKind::Coverage(_)
-            | StatementKind::Nop => {
-                Err(format!("statement {:?} is not assumed to appear", statement))
-            }
+            | StatementKind::Nop => Err(format!(
+                "statement {:?} is not assumed to appear",
+                statement
+            )),
         }
     }
 
@@ -444,7 +454,8 @@ impl<'rn, 'tcx: 'rn> Renamer<'rn, 'tcx> {
         place: &Place<'tcx>,
         rvalue: &Rvalue<'tcx>,
         location: Location,
-    ) -> Result<(), String> where
+    ) -> Result<(), String>
+    where
         Infer: InferMode<'rn, 'db, 'tcx>,
     {
         tracing::debug!("processing assignment {:?} = {:?}", place, rvalue);

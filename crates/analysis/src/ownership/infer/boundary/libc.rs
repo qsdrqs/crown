@@ -39,19 +39,27 @@ where
     }
 
     fn call_malloc(&mut self, destination: Option<Consume<Range<Var>>>) {
-        let destination = destination.as_ref().unwrap();
+        let Some(destination) = destination.as_ref() else {
+            return;
+        };
         <Analysis as InferMode>::source(self, destination.clone());
     }
 
     fn call_calloc(&mut self, destination: Option<Consume<Range<Var>>>) {
-        let destination = destination.as_ref().unwrap();
+        let Some(destination) = destination.as_ref() else {
+            return;
+        };
         <Analysis as InferMode>::source(self, destination.clone());
     }
 
     fn call_realloc(&mut self, destination: Option<Consume<Range<Var>>>, args: &CallArgs) {
-        let destination = destination.as_ref().unwrap();
+        let Some(destination) = destination.as_ref() else {
+            return;
+        };
         <Analysis as InferMode>::source(self, destination.clone());
-        let (arg, is_ref) = args[0].clone().unwrap();
+        let Some((arg, is_ref)) = args[0].clone() else {
+            return;
+        };
         assert!(!is_ref);
         <Analysis as InferMode>::sink(self, arg);
     }
@@ -75,9 +83,15 @@ where
         assert_eq!(dest_ty, arg_ty);
         let ty = dest_ty;
 
-        let destination = destination.as_ref().cloned().unwrap();
+        let Some(destination) = destination.as_ref().cloned() else {
+            self.unknown_call(None, args);
+            return;
+        };
         // <Analysis as InferMode>::source(self, destination.clone());
-        let (arg, is_ref) = args[0].clone().unwrap();
+        let Some((arg, is_ref)) = args[0].clone() else {
+            self.unknown_call(Some(destination), args);
+            return;
+        };
         assert!(!is_ref);
         // <Analysis as InferMode>::sink(self, arg);
 

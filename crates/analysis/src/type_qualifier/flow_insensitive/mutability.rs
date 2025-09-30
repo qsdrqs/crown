@@ -145,7 +145,13 @@ impl<'tcx, M: MutabilityLikeAnalysis> Infer<'tcx> for M {
 
         match rhs {
             Rvalue::Use(Operand::Copy(rhs) | Operand::Move(rhs)) | Rvalue::CopyForDeref(rhs) => {
-                let lhs = place_vars_result::<MutCtxt>(lhs, local_decls, locals, struct_fields, database)?;
+                let lhs = place_vars_result::<MutCtxt>(
+                    lhs,
+                    local_decls,
+                    locals,
+                    struct_fields,
+                    database,
+                )?;
                 let mut rhs_deref = None;
                 let rhs = place_vars_result::<UnknownCtxt>(
                     rhs,
@@ -187,7 +193,13 @@ impl<'tcx, M: MutabilityLikeAnalysis> Infer<'tcx> for M {
             }
             Rvalue::Cast(_, Operand::Copy(rhs) | Operand::Move(rhs), _) => {
                 // for cast, we process the head ptr only
-                let lhs = place_vars_result::<MutCtxt>(lhs, local_decls, locals, struct_fields, database)?;
+                let lhs = place_vars_result::<MutCtxt>(
+                    lhs,
+                    local_decls,
+                    locals,
+                    struct_fields,
+                    database,
+                )?;
                 let mut rhs_deref = None;
                 let rhs = place_vars_result::<UnknownCtxt>(
                     rhs,
@@ -216,8 +228,13 @@ impl<'tcx, M: MutabilityLikeAnalysis> Infer<'tcx> for M {
             //     }
             // }
             Rvalue::Ref(_, _, rhs) | Rvalue::AddressOf(_, rhs) => {
-                let mut lhs =
-                    place_vars_result::<EnsureNoDeref>(lhs, local_decls, locals, struct_fields, &mut ())?;
+                let mut lhs = place_vars_result::<EnsureNoDeref>(
+                    lhs,
+                    local_decls,
+                    locals,
+                    struct_fields,
+                    &mut (),
+                )?;
                 let mut rhs_deref = None;
                 let rhs = place_vars_result::<UnknownCtxt>(
                     rhs,
@@ -236,7 +253,13 @@ impl<'tcx, M: MutabilityLikeAnalysis> Infer<'tcx> for M {
                 }
             }
             _ => {
-                let _ = place_vars_result::<MutCtxt>(lhs, local_decls, locals, struct_fields, database)?;
+                let _ = place_vars_result::<MutCtxt>(
+                    lhs,
+                    local_decls,
+                    locals,
+                    struct_fields,
+                    database,
+                )?;
             }
         }
 
@@ -271,7 +294,8 @@ impl<'tcx, M: MutabilityLikeAnalysis> Infer<'tcx> for M {
                             let callee_body = tcx.optimized_mir(callee);
                             let mut callee_vars = fn_locals
                                 .0
-                                .contents_iter(&callee).unwrap()
+                                .contents_iter(&callee)
+                                .unwrap()
                                 .take(callee_body.arg_count + 1);
 
                             let dest = place_vars::<MutCtxt>(

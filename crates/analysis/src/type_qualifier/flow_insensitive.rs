@@ -66,7 +66,8 @@ impl<Qualifier> TypeQualifiers<Qualifier> {
 
     pub fn struct_results(&self, r#struct: &DefId) -> impl Iterator<Item = &[Qualifier]> {
         self.struct_fields
-            .fields(r#struct).unwrap()
+            .fields(r#struct)
+            .unwrap()
             .map(|Range { start, end }| &self.model.raw[start.index()..end.index()])
     }
 

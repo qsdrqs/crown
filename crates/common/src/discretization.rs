@@ -13,7 +13,10 @@ pub struct Discretization<Idx> {
 
 impl<Idx: Copy> Discretization<Idx> {
     #[inline]
-    pub fn contents_iter(&self, did: &DefId) -> Result<impl Iterator<Item = Range<Idx>> + '_, String> {
+    pub fn contents_iter(
+        &self,
+        did: &DefId,
+    ) -> Result<impl Iterator<Item = Range<Idx>> + '_, String> {
         if self.did_idx.get(did).is_none() {
             return Err(format!("Discretization: DefId {did:?} not found"));
         }
@@ -32,7 +35,9 @@ impl<Idx: Copy> Discretization<Idx> {
             return Err(format!("Discretization: DefId {did:?} not found"));
         }
         if idx >= self.contents[self.did_idx[did]].len() {
-            return Err(format!("Discretization: DefId {did:?} does not have {idx}th entity"));
+            return Err(format!(
+                "Discretization: DefId {did:?} does not have {idx}th entity"
+            ));
         }
         let outer_idx = self.did_idx[did];
         Ok(self.contents[outer_idx][idx]..self.contents[outer_idx][idx + 1])

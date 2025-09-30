@@ -434,9 +434,12 @@ where
         InferCtxt::project_deeper(base, base_ty, place.projection, infer_cx)
     }
 
-    fn copy_for_deref(infer_cx: &mut Self::Ctxt, consume: Option<Consume<Self::LocalSig>>) -> Result<(), String> {
+    fn copy_for_deref(
+        infer_cx: &mut Self::Ctxt,
+        consume: Option<Consume<Self::LocalSig>>,
+    ) -> Result<(), String> {
         if !infer_cx.deref_copy.is_none() {
-            return Err("deref_copy is already set".to_string())
+            return Err("deref_copy is already set".to_string());
         }
         infer_cx.deref_copy = consume;
         Ok(())
